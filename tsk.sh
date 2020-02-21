@@ -127,6 +127,7 @@ while true; do
 		: "${due:=888888}"
 
 		set -- "$(printf '%s,%s,%s,%s' "$assignee" "$name" "$category" "$due")"
+		unset assignee name category due
 		;;
 	xd | xe | xq | xp) ;;
 	*)
