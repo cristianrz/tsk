@@ -1,6 +1,6 @@
 DEST = ${HOME}
 
-all:
+all: tsk
 
 tsk: tsk.sh
 	cat tsk.sh > tsk
