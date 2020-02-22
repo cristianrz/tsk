@@ -37,7 +37,7 @@ tskp() {
 
 	{
 		cat <<'EOF'
-ID,ASSIGNEE,TASK NAME,CATEGORY,DUE,CREATED
+ID,ASSIGNEE,TASK NAME,PRIORITY,DUE,CREATED
 EOF
 		cat "$MAIN"
 	} | column -s, -t
@@ -89,6 +89,10 @@ tskd() {
 
 tskq() { exit 0; }
 
+tski() {
+	tska "$USER","$(cat)",-,888888
+}
+
 tske() {
 	backup
 	cp "$MAIN" "$TMP"
@@ -96,10 +100,43 @@ tske() {
 	mv "$TMP" "$MAIN"
 }
 
+parse() {
+	cmd="$1" && shift
+	case "x$cmd" in
+	xa)
+		printf 'Assignee [-]: ' && read -r assignee
+		: "${assignee:=-}"
+
+		while [ -z "${name:-}" ]; do
+			printf 'Task name: ' && read -r name
+		done
+
+		printf 'Priority [-]: ' && read -r priority
+		: "${priority:=-}"
+
+		printf 'Due date [888888]: ' && read -r due
+		: "${due:=888888}"
+
+		set -- "$(printf '%s,%s,%s,%s' "$assignee" "$name" "$priority" "$due")"
+		unset assignee name priority due
+		;;
+	xd | xe | xq | xp | xi ) ;;
+	*)
+		help
+		return 1
+		;;
+	esac
+
+	if ! eval "tsk$cmd" "$@"; then
+		printf '%s: command "%s" failed\n' "$(basename "$0")" "$cmd" >&2
+	fi
+}
+
 # We don't want Ctrl+C to work
 trap '' 2
 trap 'rm -f "$TMP"' EXIT
 
+# Initialise dir and file if they don't exist
 if [ ! -f "$MAIN" ]; then
 	DIR="$(dirname "$MAIN")"
 	if [ ! -d "$DIR" ]; then
@@ -109,36 +146,17 @@ if [ ! -f "$MAIN" ]; then
 	touch "$MAIN"
 fi
 
-while true; do
-	printf '? ' && read -r args
-	eval "set -- ${args:-p}"
-
-	cmd="$1" && shift
-	case "x$cmd" in
-	xa)
-		printf 'Assignee [-]: ' && read -r assignee
-		: "${assignee:=-}"
-		while [ -z "${name:-}" ]; do
-			printf 'Task name: ' && read -r name
-		done
-		printf 'Category [-]: ' && read -r category
-		: "${category:=-}"
-		printf 'Due date [888888]: ' && read -r due
-		: "${due:=888888}"
-
-		set -- "$(printf '%s,%s,%s,%s' "$assignee" "$name" "$category" "$due")"
-		unset assignee name category due
-		;;
-	xd | xe | xq | xp) ;;
-	*)
-		help
-		continue
-		;;
-	esac
-
-	if ! eval "tsk$cmd" "$@"; then
-		printf '%s: command "%s" failed\n' "$(basename "$0")" "$cmd" >&2
-	fi
-done
+case "$#" in
+# If no args are given open interactive mode
+0)
+	while true; do
+		printf '? ' && read -r args
+		eval "set -- ${args:-p}"
+		parse "$@"
+	done
+	;;
+# Handles commands given from command line args
+*) parse "$@" ;;
+esac
 
 trap 2
