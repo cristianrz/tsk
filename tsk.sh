@@ -179,10 +179,10 @@ fi
 case "$#" in
 # If no args are given open interactive mode
 0)
-	while true; do
+	while : ; do
 		printf '? ' && read -r args
 		eval "set -- ${args:-p}"
-		parse "$@"
+		parse "$@" || true
 	done
 	;;
 # Handles commands given from command line args

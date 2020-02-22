@@ -16,5 +16,8 @@ install: all
 	@mkdir -p $(DEST)/man/man1
 	@mv tsk.1 $(DEST)/man/man1
 
+uninstall:
+	@rm -f $(DEST)/bin/tsk $(DEST)/man/man1/tsk.1
+
 clean:
 	@rm -f tsk tsk.1
