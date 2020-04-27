@@ -66,11 +66,9 @@ tskp() {
 	tsktidy
 
 	{
-		cat <<'EOF'
-ID,ASSIGNEE,TASK NAME,PRIORITY,DUE,CREATED
-EOF
+		echo 'ID,ASSIGNEE,TASK NAME,PRIORITY,DUE'
 		cat "$MAIN"
-	} | column -s, -t
+	} | awk -F ',' '{ printf "%-7s%-10s%-40s%-15s%s\n",$1,$2,$3,$4,$5 }'
 }
 
 tska() {
