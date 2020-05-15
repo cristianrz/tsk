@@ -32,10 +32,11 @@
 
 set -eu
 
-BKP="$HOME"/.cache/tsk/backup.csv
-DONE="$HOME"/.cache/tsk/done.log
-MAIN="$HOME"/.cache/tsk/pending.csv
-TMP="$HOME"/.cache/tsk/tmp.csv
+TSK_PATH="$HOME/.cache.tsk"
+BKP="$TSK_PATH/backup.csv"
+DONE="$TSK_PATH/done.log"
+TMP="$(mktemp)"
+TODO="$TSK_PATH/pending.csv"
 
 help() {
 	cat >&2 <<'EOF'
@@ -48,17 +49,15 @@ Available commands:
 EOF
 }
 
-# Backs up MAIN
-backup() {
-	cp "$MAIN" "$BKP"
-}
+# Backs up TODO
+backup() { cp "$TODO" "$BKP"; }
 
-# Orders MAIN
+# Orders TODO
 tsktidy() {
 	backup
-	cp "$MAIN" "$TMP"
-	sort -t, -k 4 "$MAIN" >"$TMP"
-	mv "$TMP" "$MAIN"
+	cp "$TODO" "$TMP"
+	sort -t, -k 4 "$TODO" >"$TMP"
+	mv "$TMP" "$TODO"
 }
 
 # Prints list of tasks
@@ -67,65 +66,51 @@ tskp() {
 
 	{
 		echo 'ID,ASSIGNEE,TASK NAME,PRIORITY,DUE'
-		cat "$MAIN"
+		cat "$TODO"
 	} | awk -F ',' '{ printf "%-7s%-10s%-40s%-15s%s\n",$1,$2,$3,$4,$5 }'
 }
 
 tska() {
 	backup
-	cp "$MAIN" "$TMP"
+	cp "$TODO" "$TMP"
 
-	_date="$(date +%y%m%d%H%M%S)"
+	date="$(date +%y%m%d%H%M%S)"
 
-	_id="$(printf '%s' "$_date" | md5sum | head -c 5)"
-	_middle="$*"
-	_created="$_date"
+	id="$(printf '%s' "$date" | md5sum | head -c 5)"
 
-	printf '%s,%s,%s\n' "$_id" "$_middle" "$_created" >>"$TMP"
+	printf '%s,%s,%s\n' "$id" "$*" "$date" >>"$TMP"
 
-	mv "$TMP" "$MAIN"
+	mv "$TMP" "$TODO"
 }
 
 tskd() {
-	if test "$#" -eq 0; then
-		return 0
-	fi
+	[ "$#" -eq 0 ] && return
 
 	backup
-	# MAIN is not copied to TMP as we will overwrite TMP
+
+	# TODO is not copied to TMP as we will overwrite TMP
 	true >"$TMP"
 
 	filter="$1" && shift
 
-	while read -r line; do
-		# Get the hash
-		id="$(printf '%s' "$line" | cut -d',' -f 1)"
-		case "$id" in
-		"$filter")
-			# If it matches the filter print and append to DONE
-			printf "[%s]: %s\n" "$(date)" "$line" | tee "$DONE"
-			;;
-		*)
-			# If it does not, append to TMP
-			printf '%s\n' "$line" >>"$TMP"
-			;;
-		esac
-	done <"$MAIN"
+	# if id matches filter goes to DONE, otherwise goes to TMP
+	awk -F',' -v filter="$filter" -v date="$(date)" -v DONE="$DONE" \
+		-v TMP="$TMP" '
+			$1 == filter {
+				printf "[%s]: %s\n", date, $0 >> DONE
+				next
+			}
+			{ print >> TMP; }
+		' "$TODO"
 
-	mv "$TMP" "$MAIN"
+	mv "$TMP" "$TODO"
 }
 
 tskq() { exit 0; }
 
-tski() {
-	tska "$USER","$(cat)",-,888888
-}
-
 tske() {
 	backup
-	cp "$MAIN" "$TMP"
-	${EDITOR-vi} "$TMP"
-	mv "$TMP" "$MAIN"
+	"${EDITOR-vi}" "$TODO"
 }
 
 parse() {
@@ -133,51 +118,39 @@ parse() {
 	case "x$cmd" in
 	xa)
 		printf 'Assignee [-]: ' && read -r assignee
-		: "${assignee:=-}"
 
 		while [ -z "${name:-}" ]; do
 			printf 'Task name: ' && read -r name
 		done
 
 		printf 'Priority [-]: ' && read -r priority
-		: "${priority:=-}"
 
 		printf 'Due date [888888]: ' && read -r due
-		: "${due:=888888}"
 
-		set -- "$(printf '%s,%s,%s,%s' "$assignee" "$name" "$priority" "$due")"
-		unset assignee name priority due
+		set -- "$(printf '%s,%s,%s,%s' "${assignee--}" "$name" \
+			"${priority--}" "${due-888888}")"
 		;;
-	xd | xe | xq | xp | xi ) ;;
+	xd | xe | xq | xp | xi) ;;
 	*)
 		help
 		return 1
 		;;
 	esac
 
-	if ! eval "tsk$cmd" "$@"; then
-		printf '%s: command "%s" failed\n' "$(basename "$0")" "$cmd" >&2
-	fi
+	eval "tsk$cmd" "$@" || printf 'tsk: command "%s" failed\n' "$cmd" >&2
 }
 
 # We don't want Ctrl+C to work
 trap '' 2
 trap 'rm -f "$TMP"' EXIT
 
-# Initialise dir and file if they don't exist
-if [ ! -f "$MAIN" ]; then
-	DIR="$(dirname "$MAIN")"
-	if [ ! -d "$DIR" ]; then
-		mkdir -p "$DIR"
-	fi
-
-	touch "$MAIN"
-fi
+mkdir -p "$TSK_PATH"
+touch "$TODO"
 
 case "$#" in
 # If no args are given open interactive mode
 0)
-	while : ; do
+	while :; do
 		printf '? ' && read -r args
 		eval "set -- ${args:-p}"
 		parse "$@" || true
