@@ -28,11 +28,11 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
-# a command-line task manager
+# A command-line task manager
 
 set -eu
 
-TSK_PATH="$HOME/.cache.tsk"
+TSK_PATH="$HOME/.cache/tsk"
 BKP="$TSK_PATH/backup.csv"
 DONE="$TSK_PATH/done.log"
 TMP="$(mktemp)"
@@ -52,10 +52,9 @@ EOF
 # Backs up TODO
 backup() { cp "$TODO" "$BKP"; }
 
-# Orders TODO
+# Orders TODO by priority
 tsktidy() {
 	backup
-	cp "$TODO" "$TMP"
 	sort -t, -k 4 "$TODO" >"$TMP"
 	mv "$TMP" "$TODO"
 }
@@ -63,46 +62,34 @@ tsktidy() {
 # Prints list of tasks
 tskp() {
 	tsktidy
-
 	{
 		echo 'ID,ASSIGNEE,TASK NAME,PRIORITY,DUE'
 		cat "$TODO"
-	} | awk -F ',' '{ printf "%-7s%-10s%-40s%-15s%s\n",$1,$2,$3,$4,$5 }'
+	} | awk -F ',' '{ printf "%-7s%-10s%-40s%-15s%s\n", $1, $2, $3, $4, $5 }'
 }
 
+# Adds a task: tska assignee name priority due
 tska() {
 	backup
-	cp "$TODO" "$TMP"
-
 	date="$(date +%y%m%d%H%M%S)"
-
 	id="$(printf '%s' "$date" | md5sum | head -c 5)"
-
-	printf '%s,%s,%s\n' "$id" "$*" "$date" >>"$TMP"
-
-	mv "$TMP" "$TODO"
+	printf '%s,%s\n' "$id" "$*" >>"$TODO"
 }
 
+# Marks a task as done: tskd id
 tskd() {
 	[ "$#" -eq 0 ] && return
-
 	backup
-
-	# TODO is not copied to TMP as we will overwrite TMP
 	true >"$TMP"
-
-	filter="$1" && shift
-
-	# if id matches filter goes to DONE, otherwise goes to TMP
+	filter="$1"
 	awk -F',' -v filter="$filter" -v date="$(date)" -v DONE="$DONE" \
 		-v TMP="$TMP" '
-			$1 == filter {
-				printf "[%s]: %s\n", date, $0 >> DONE
-				next
-			}
-			{ print >> TMP; }
-		' "$TODO"
-
+		$1 == filter {
+			printf "[%s]: %s\n", date, $0 >> DONE
+			next
+		}
+		{ print >> TMP }
+	' "$TODO"
 	mv "$TMP" "$TODO"
 }
 
@@ -114,33 +101,41 @@ tske() {
 }
 
 parse() {
+	[ "$#" -eq 0 ] && return
 	cmd="$1" && shift
-	case "x$cmd" in
-	xa)
-		printf 'Assignee [-]: ' && read -r assignee
 
+	case "$cmd" in
+	a)
+		printf 'Assignee [-]: ' && read -r assignee
 		while [ -z "${name:-}" ]; do
 			printf 'Task name: ' && read -r name
 		done
-
 		printf 'Priority [-]: ' && read -r priority
-
 		printf 'Due date [888888]: ' && read -r due
-
-		set -- "$(printf '%s,%s,%s,%s' "${assignee--}" "$name" \
-			"${priority--}" "${due-888888}")"
+		tska "$(printf '%s,%s,%s,%s' \
+			"${assignee--}" "$name" "${priority--}" "${due:-888888}")"
+		name=""
 		;;
-	xd | xe | xq | xp | xi) ;;
+	d)
+		tskd "$@"
+		;;
+	e)
+		tske
+		;;
+	p)
+		tskp
+		;;
+	q)
+		tskq
+		;;
 	*)
 		help
 		return 1
 		;;
 	esac
-
-	eval "tsk$cmd" "$@" || printf 'tsk: command "%s" failed\n' "$cmd" >&2
 }
 
-# We don't want Ctrl+C to work
+# We don't want Ctrl+C to exit
 trap '' 2
 trap 'rm -f "$TMP"' EXIT
 
@@ -148,16 +143,18 @@ mkdir -p "$TSK_PATH"
 touch "$TODO"
 
 case "$#" in
-# If no args are given open interactive mode
 0)
+	# Interactive mode
 	while :; do
-		printf '? ' && read -r args
-		eval "set -- ${args:-p}"
-		parse "$@" || true
+		printf '? ' && read -r cmd || break
+		[ -z "$cmd" ] && cmd="p"
+		parse $cmd || true
 	done
 	;;
-# Handles commands given from command line args
-*) parse "$@" ;;
+*)
+	# Single command mode
+	parse "$@"
+	;;
 esac
 
-trap 2
+trap - 2
